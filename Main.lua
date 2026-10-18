@@ -31,7 +31,7 @@ local httpRequest = (syn and syn.request) or (http and http.request) or request
 local genv = getgenv()
 genv.UIElements = {}
 
-local IsMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+local IsMobile = UserInputService.TouchEnabled and (not UserInputService.KeyboardEnabled or not UserInputService.MouseEnabled)
 
 local detectedGameName = "Roblox Experience"
 local detectedGameIcon = "rbxthumb://type=GameIcon&id=" .. tostring(game.PlaceId) .. "&w=150&h=150"
@@ -111,6 +111,7 @@ end
 fetchDiscordStats()
 
 local Library = {
+    IsMobile = IsMobile,
     connections = {},
     Flags = {},
     Objects = {},
@@ -547,13 +548,14 @@ function Library:RegisterObject(flag, object)
     end
 end
 
-function Library:RegisterKeybind(flag, name, key, getState, onToggle, callback)
+function Library:RegisterKeybind(flag, name, key, getState, onToggle, callback, isButton)
     self.Keybinds[flag] = {
         name = name or flag,
         key = key or "None",
         getState = getState or function() return nil end,
         toggle = onToggle,
         callback = callback or onToggle,
+        isButton = isButton or false,
     }
     if self.UpdateKeybindList then
         self:UpdateKeybindList()
@@ -835,14 +837,15 @@ function Library:SetKeybindListVisible(state)
 end
 
 function Library:UpdateToggleBarVisibility()
+    local isMobileUser = (Library.IsMobile ~= nil) and Library.IsMobile or IsMobile
     local enabled = Library.ToggleBarEnabled and (Library.ToggleBarStyle ~= "Disabled")
     local platformMatches = false
     if Library.ToggleBarPlatform == "Both" then
         platformMatches = true
     elseif Library.ToggleBarPlatform == "Mobile Only" or Library.ToggleBarPlatform == "Mobile" then
-        platformMatches = IsMobile
+        platformMatches = isMobileUser
     elseif Library.ToggleBarPlatform == "PC Only" then
-        platformMatches = not IsMobile
+        platformMatches = not isMobileUser
     end
     local active = enabled and platformMatches
     if Library.ToggleBarBtn then
@@ -887,7 +890,8 @@ function Library.new(selfOrOpts, options)
     Library.core = screen
     genv.CloseUi = screen
 
-    local fullSize = IsMobile and CONTAINER_SIZE_TOUCH or CONTAINER_SIZE
+    local isMobileUser = (Library.IsMobile ~= nil) and Library.IsMobile or IsMobile
+    local fullSize = isMobileUser and CONTAINER_SIZE_TOUCH or CONTAINER_SIZE
 
     local MainHolder = new("Frame", {
         Name = "MainHolder",
@@ -930,7 +934,43 @@ function Library.new(selfOrOpts, options)
     }, MainHolder)
     table.insert(genv.UIElements, Container)
     corner(Container, 20)
-    stroke(Container, genv.uiline or Color3.fromRGB(34, 35, 42), 1, 0.5)
+    local containerStroke = stroke(Container, genv.uiline or Color3.fromRGB(34, 35, 42), 1, 0.5)
+
+    local containerGlowLine = new("Frame", {
+        Name = "ContainerGlowLine",
+        AnchorPoint = Vector2.new(0.5, 0),
+        Position = UDim2.new(0.5, 0, 0, 0),
+        Size = UDim2.new(0.7, 0, 0, 1),
+        BackgroundColor3 = WHITE,
+        BackgroundTransparency = 0.5,
+        BorderSizePixel = 0,
+        ZIndex = 3,
+    }, Container)
+    new("UIGradient", {
+        Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, genv.accent or Color3.fromRGB(168, 85, 247)),
+            ColorSequenceKeypoint.new(0.5, WHITE),
+            ColorSequenceKeypoint.new(1, genv.accent or Color3.fromRGB(168, 85, 247)),
+        },
+        Transparency = NumberSequence.new{
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.5, 0.3),
+            NumberSequenceKeypoint.new(1, 1),
+        },
+    }, containerGlowLine)
+
+    Container.MouseEnter:Connect(function()
+        if containerStroke then
+            TweenService:Create(containerStroke, TweenInfo.new(0.28, Enum.EasingStyle.Quint), {Color = genv.accent or Color3.fromRGB(168, 85, 247), Transparency = 0.2}):Play()
+        end
+        TweenService:Create(containerGlowLine, TweenInfo.new(0.28, Enum.EasingStyle.Quint), {BackgroundTransparency = 0.2}):Play()
+    end)
+    Container.MouseLeave:Connect(function()
+        if containerStroke then
+            TweenService:Create(containerStroke, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {Color = genv.uiline or Color3.fromRGB(34, 35, 42), Transparency = 0.5}):Play()
+        end
+        TweenService:Create(containerGlowLine, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {BackgroundTransparency = 0.5}):Play()
+    end)
 
     local Top = new("Frame", {
         Name = "Top",
@@ -1311,7 +1351,7 @@ function Library.new(selfOrOpts, options)
     new("UISizeConstraint", {MaxSize = Vector2.new(220, 200)}, tipLabel)
 
     local function attachTooltip(targetGui, tipText)
-        if not tipText or tipText == "" then return end
+        if isMobileUser or not tipText or tipText == "" then return end
         local hover = false
         targetGui.MouseEnter:Connect(function()
             hover = true
@@ -1346,6 +1386,7 @@ function Library.new(selfOrOpts, options)
     }, screen)
     pill(watermark)
     local wmStroke = stroke(watermark, genv.uiline or Color3.fromRGB(42, 45, 56), 1, 0.4)
+    local wmScale = new("UIScale", {Scale = 1}, watermark)
     new("UIPadding", {
         PaddingLeft = UDim.new(0, 8),
         PaddingRight = UDim.new(0, 12),
@@ -1398,6 +1439,10 @@ function Library.new(selfOrOpts, options)
         BorderSizePixel = 0,
         ZIndex = 851,
     }, watermark)
+    if isMobileUser then
+        wmHubLabel.Visible = false
+        wmDiv1.Visible = false
+    end
 
     local wmPingFrame = new("Frame", {
         Name = "WMPingFrame",
@@ -1735,6 +1780,12 @@ function Library.new(selfOrOpts, options)
             wmMoved = false
             wmDragStart = input.Position
             wmStartPos = watermark.Position
+            TweenService:Create(wmScale, TweenInfo.new(0.08), {Scale = 0.96}):Play()
+        end
+    end)
+    watermark.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            TweenService:Create(wmScale, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
         end
     end)
     watermark.MouseEnter:Connect(function()
@@ -1795,6 +1846,22 @@ function Library.new(selfOrOpts, options)
     }, screen)
     corner(keybindList, 10)
     local kbStroke = stroke(keybindList, genv.uiline or Color3.fromRGB(42, 45, 56), 1, 0.4)
+    local kbScale = new("UIScale", {Scale = 1}, keybindList)
+
+    keybindList.MouseEnter:Connect(function()
+        TweenService:Create(keybindList, TweenInfo.new(0.22), {BackgroundColor3 = Color3.fromRGB(22, 24, 32)}):Play()
+        if kbStroke then
+            TweenService:Create(kbStroke, TweenInfo.new(0.22), {Color = genv.accent or Color3.fromRGB(168, 85, 247), Transparency = 0.15}):Play()
+        end
+    end)
+    keybindList.MouseLeave:Connect(function()
+        if not kbDragging then
+            TweenService:Create(keybindList, TweenInfo.new(0.25), {BackgroundColor3 = genv.uicontainer or Color3.fromRGB(18, 19, 24)}):Play()
+            if kbStroke then
+                TweenService:Create(kbStroke, TweenInfo.new(0.25), {Color = genv.uiline or Color3.fromRGB(42, 45, 56), Transparency = 0.4}):Play()
+            end
+        end
+    end)
 
     local kbTop = new("Frame", {
         Size = UDim2.new(1, 0, 0, 28),
@@ -1951,49 +2018,97 @@ function Library.new(selfOrOpts, options)
                     Padding = UDim.new(0, 5),
                 }, rightHolder)
 
-                local state = kb.getState and kb.getState()
-                local switchTrack = new("Frame", {
-                    Size = UDim2.new(0, 28, 0, 16),
-                    BackgroundColor3 = (state == true) and (genv.accent or Color3.fromRGB(168, 85, 247)) or Color3.fromRGB(38, 40, 50),
-                    BorderSizePixel = 0,
-                    ZIndex = 854,
-                }, rightHolder)
-                pill(switchTrack)
-                local trackStrk = stroke(switchTrack, Color3.fromRGB(50, 53, 66), 1, 0.5)
+                if kb.isButton then
+                    local actBtn = new("TextButton", {
+                        Size = UDim2.new(0, 34, 0, 16),
+                        BackgroundColor3 = Color3.fromRGB(36, 38, 48),
+                        BorderSizePixel = 0,
+                        AutoButtonColor = false,
+                        Text = "",
+                        ZIndex = 854,
+                    }, rightHolder)
+                    corner(actBtn, 4)
+                    stroke(actBtn, genv.accent or Color3.fromRGB(60, 64, 80), 1, 0.4)
 
-                local switchKnob = new("Frame", {
-                    AnchorPoint = Vector2.new(0, 0.5),
-                    Position = (state == true) and UDim2.new(1, -13, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
-                    Size = UDim2.new(0, 11, 0, 11),
-                    BackgroundColor3 = WHITE,
-                    BorderSizePixel = 0,
-                    ZIndex = 855,
-                }, switchTrack)
-                pill(switchKnob)
+                    local actText = new("TextLabel", {
+                        Size = UDim2.new(1, 0, 1, 0),
+                        BackgroundTransparency = 1,
+                        FontFace = font(Enum.FontWeight.Bold),
+                        TextColor3 = genv.accent or WHITE,
+                        TextSize = 9,
+                        Text = "RUN",
+                        ZIndex = 855,
+                    }, actBtn)
 
-                local lastTog = 0
-                local function toggleRow()
-                    if tick() - lastTog < 0.15 then return end
-                    lastTog = tick()
-                    if kb.toggle then
-                        kb.toggle()
-                    elseif kb.callback then
-                        kb.callback(not (kb.getState and kb.getState() or false))
+                    local lastRun = 0
+                    local function runAct()
+                        if tick() - lastRun < 0.15 then return end
+                        lastRun = tick()
+                        TweenService:Create(actBtn, TweenInfo.new(0.08), {BackgroundColor3 = genv.accent or Color3.fromRGB(168, 85, 247)}):Play()
+                        actText.TextColor3 = WHITE
+                        if kb.toggle then kb.toggle() elseif kb.callback then kb.callback() end
+                        task.delay(0.12, function()
+                            if actBtn and actBtn.Parent then
+                                TweenService:Create(actBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(36, 38, 48)}):Play()
+                                actText.TextColor3 = genv.accent or WHITE
+                            end
+                        end)
                     end
-                    task.defer(function()
-                        local newState = kb.getState and kb.getState() or false
-                        local targetPos = (newState == true) and UDim2.new(1, -13, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-                        local targetCol = (newState == true) and (genv.accent or Color3.fromRGB(168, 85, 247)) or Color3.fromRGB(38, 40, 50)
-                        TweenService:Create(switchKnob, TweenInfo.new(0.18, Enum.EasingStyle.Quint), {Position = targetPos}):Play()
-                        TweenService:Create(switchTrack, TweenInfo.new(0.18), {BackgroundColor3 = targetCol}):Play()
-                        if rowStrk then
-                            local strkCol = (newState == true) and (genv.accent or Color3.fromRGB(168, 85, 247)) or Color3.fromRGB(38, 40, 52)
-                            TweenService:Create(rowStrk, TweenInfo.new(0.2), {Color = strkCol}):Play()
+                    actBtn.MouseButton1Click:Connect(runAct)
+                    actBtn.TouchTap:Connect(runAct)
+                    row.MouseButton1Click:Connect(runAct)
+                    row.TouchTap:Connect(runAct)
+                else
+                    local state = kb.getState and kb.getState()
+                    local switchTrack = new("Frame", {
+                        Size = UDim2.new(0, 28, 0, 16),
+                        BackgroundColor3 = (state == true) and (genv.togglecoloron or genv.accent or Color3.fromRGB(168, 85, 247)) or (genv.togglecoloroff or Color3.fromRGB(38, 40, 50)),
+                        BorderSizePixel = 0,
+                        ZIndex = 854,
+                    }, rightHolder)
+                    pill(switchTrack)
+                    local trackStrk = stroke(switchTrack, Color3.fromRGB(50, 53, 66), 1, 0.5)
+
+                    local switchKnob = new("Frame", {
+                        AnchorPoint = Vector2.new(0, 0.5),
+                        Position = (state == true) and UDim2.new(1, -13, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
+                        Size = UDim2.new(0, 11, 0, 11),
+                        BackgroundColor3 = WHITE,
+                        BorderSizePixel = 0,
+                        ZIndex = 855,
+                    }, switchTrack)
+                    pill(switchKnob)
+
+                    local lastTog = 0
+                    local function toggleRow()
+                        if tick() - lastTog < 0.15 then return end
+                        lastTog = tick()
+                        if kb.toggle then
+                            kb.toggle()
+                        elseif kb.callback then
+                            kb.callback(not (kb.getState and kb.getState() or false))
                         end
-                    end)
+                        task.defer(function()
+                            local newState = kb.getState and kb.getState() or false
+                            local targetPos = (newState == true) and UDim2.new(1, -13, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
+                            local targetCol = (newState == true) and (genv.togglecoloron or genv.accent or Color3.fromRGB(168, 85, 247)) or (genv.togglecoloroff or Color3.fromRGB(38, 40, 50))
+                            TweenService:Create(switchKnob, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0, 14, 0, 11)}):Play()
+                            TweenService:Create(switchKnob, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = targetPos}):Play()
+                            TweenService:Create(switchTrack, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {BackgroundColor3 = targetCol}):Play()
+                            task.delay(0.09, function()
+                                if switchKnob and switchKnob.Parent then
+                                    TweenService:Create(switchKnob, TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 11, 0, 11)}):Play()
+                                end
+                            end)
+                            if rowStrk then
+                                local strkCol = (newState == true) and (genv.accent or Color3.fromRGB(168, 85, 247)) or Color3.fromRGB(38, 40, 52)
+                                TweenService:Create(rowStrk, TweenInfo.new(0.2), {Color = strkCol}):Play()
+                            end
+                        end)
+                    end
+                    row.MouseButton1Click:Connect(toggleRow)
+                    row.TouchTap:Connect(toggleRow)
                 end
-                row.MouseButton1Click:Connect(toggleRow)
-                row.TouchTap:Connect(toggleRow)
 
                 local badge = new("Frame", {
                     Size = UDim2.new(0, 0, 0, 17),
@@ -2071,6 +2186,17 @@ function Library.new(selfOrOpts, options)
     }, screen)
     local islandCorner = corner(island, 17)
     local islandStroke = stroke(island, Color3.fromRGB(36, 38, 48), 1, 0.45)
+
+    island.MouseEnter:Connect(function()
+        if islandStroke then
+            TweenService:Create(islandStroke, TweenInfo.new(0.25), {Color = genv.accent or Color3.fromRGB(168, 85, 247), Transparency = 0.2}):Play()
+        end
+    end)
+    island.MouseLeave:Connect(function()
+        if islandStroke then
+            TweenService:Create(islandStroke, TweenInfo.new(0.25), {Color = Color3.fromRGB(36, 38, 48), Transparency = 0.45}):Play()
+        end
+    end)
     local islandScale = new("UIScale", {Scale = 1}, island)
     Library.IslandFrame = island
 
@@ -2139,15 +2265,15 @@ function Library.new(selfOrOpts, options)
         Name = "BarsHolder",
         AnchorPoint = Vector2.new(1, 0.5),
         Position = UDim2.new(1, 0, 0.5, 0),
-        Size = UDim2.new(0, 26, 0, 18),
+        Size = UDim2.new(0, 24, 0, 16),
         BackgroundTransparency = 1,
         ZIndex = 853,
     }, islandVisualizer)
 
     bar1 = new("Frame", {
-        AnchorPoint = Vector2.new(0, 0.5),
-        Position = UDim2.new(0, 0, 0.5, 0),
-        Size = UDim2.new(0, 3, 0, 8),
+        AnchorPoint = Vector2.new(0, 1),
+        Position = UDim2.new(0, 0, 1, -1),
+        Size = UDim2.new(0, 3, 0, 5),
         BackgroundColor3 = genv.accent or Color3.fromRGB(168, 85, 247),
         BorderSizePixel = 0,
         ZIndex = 854,
@@ -2155,9 +2281,9 @@ function Library.new(selfOrOpts, options)
     pill(bar1)
 
     bar2 = new("Frame", {
-        AnchorPoint = Vector2.new(0, 0.5),
-        Position = UDim2.new(0, 7, 0.5, 0),
-        Size = UDim2.new(0, 3, 0, 14),
+        AnchorPoint = Vector2.new(0, 1),
+        Position = UDim2.new(0, 6, 1, -1),
+        Size = UDim2.new(0, 3, 0, 8),
         BackgroundColor3 = genv.accent or Color3.fromRGB(168, 85, 247),
         BorderSizePixel = 0,
         ZIndex = 854,
@@ -2165,9 +2291,9 @@ function Library.new(selfOrOpts, options)
     pill(bar2)
 
     bar3 = new("Frame", {
-        AnchorPoint = Vector2.new(0, 0.5),
-        Position = UDim2.new(0, 14, 0.5, 0),
-        Size = UDim2.new(0, 3, 0, 10),
+        AnchorPoint = Vector2.new(0, 1),
+        Position = UDim2.new(0, 12, 1, -1),
+        Size = UDim2.new(0, 3, 0, 11),
         BackgroundColor3 = genv.accent or Color3.fromRGB(168, 85, 247),
         BorderSizePixel = 0,
         ZIndex = 854,
@@ -2175,9 +2301,9 @@ function Library.new(selfOrOpts, options)
     pill(bar3)
 
     bar4 = new("Frame", {
-        AnchorPoint = Vector2.new(0, 0.5),
-        Position = UDim2.new(0, 21, 0.5, 0),
-        Size = UDim2.new(0, 3, 0, 6),
+        AnchorPoint = Vector2.new(0, 1),
+        Position = UDim2.new(0, 18, 1, -1),
+        Size = UDim2.new(0, 3, 0, 14),
         BackgroundColor3 = genv.accent or Color3.fromRGB(168, 85, 247),
         BorderSizePixel = 0,
         ZIndex = 854,
@@ -2582,6 +2708,16 @@ function Library.new(selfOrOpts, options)
     }, ToggleBtn)
     pill(toggleDot)
 
+    task.spawn(function()
+        while ToggleBtn and ToggleBtn.Parent do
+            TweenService:Create(toggleDot, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {BackgroundTransparency = 0.55}):Play()
+            task.wait(1.2)
+            if not ToggleBtn or not ToggleBtn.Parent then break end
+            TweenService:Create(toggleDot, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {BackgroundTransparency = 0}):Play()
+            task.wait(1.2)
+        end
+    end)
+
     local toggleIcon = new("ImageLabel", {
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.new(0.5, 0, 0.5, 0),
@@ -2617,6 +2753,7 @@ function Library.new(selfOrOpts, options)
 
     ToggleBtn.MouseEnter:Connect(function()
         TweenService:Create(toggleScale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1.12}):Play()
+        TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(26, 28, 38)}):Play()
         if toggleStroke then
             TweenService:Create(toggleStroke, TweenInfo.new(0.2), {Color = genv.accent or Color3.fromRGB(168, 85, 247), Transparency = 0}):Play()
         end
@@ -2625,6 +2762,7 @@ function Library.new(selfOrOpts, options)
     ToggleBtn.MouseLeave:Connect(function()
         if not toggleDragging then
             TweenService:Create(toggleScale, TweenInfo.new(0.25, Enum.EasingStyle.Quint), {Scale = 1}):Play()
+            TweenService:Create(ToggleBtn, TweenInfo.new(0.25), {BackgroundColor3 = genv.uicontainer or Color3.fromRGB(18, 19, 25)}):Play()
             if toggleStroke then
                 TweenService:Create(toggleStroke, TweenInfo.new(0.2), {Color = genv.accent or Color3.fromRGB(168, 85, 247), Transparency = 0.35}):Play()
             end
@@ -2764,14 +2902,15 @@ function Library.new(selfOrOpts, options)
     end)
 
     local function updateToggleVisibility()
+        local isMobileUser = (Library.IsMobile ~= nil) and Library.IsMobile or IsMobile
         local enabled = Library.ToggleBarEnabled and (Library.ToggleBarStyle ~= "Disabled")
         local platformMatch = false
         if Library.ToggleBarPlatform == "Both" then
             platformMatch = true
         elseif Library.ToggleBarPlatform == "Mobile Only" or Library.ToggleBarPlatform == "Mobile" then
-            platformMatch = IsMobile
+            platformMatch = isMobileUser
         elseif Library.ToggleBarPlatform == "PC Only" then
-            platformMatch = not IsMobile
+            platformMatch = not isMobileUser
         end
         local active = enabled and platformMatch
         if ToggleBtn then
@@ -2933,12 +3072,7 @@ function Library.new(selfOrOpts, options)
             islandMascot.Rotation = math.sin(now * 3.5) * 8
             islandMascot.Position = UDim2.new(0, 0, 0.5, math.sin(now * 6) * 1.5)
         end
-        if bar1 and bar1.Parent then
-            bar1.Size = UDim2.new(0, 3, 0, math.clamp(4 + math.abs(math.sin(now * 7.5 + 0.3)) * 10, 3, 15))
-            bar2.Size = UDim2.new(0, 3, 0, math.clamp(4 + math.abs(math.sin(now * 9.2 + 1.2)) * 13, 3, 16))
-            bar3.Size = UDim2.new(0, 3, 0, math.clamp(4 + math.abs(math.sin(now * 6.8 + 2.4)) * 9, 3, 14))
-            bar4.Size = UDim2.new(0, 3, 0, math.clamp(4 + math.abs(math.sin(now * 8.4 + 3.8)) * 11, 3, 15))
-        end
+
     end)
 
     task.spawn(function()
@@ -2978,6 +3112,24 @@ function Library.new(selfOrOpts, options)
             islandActiveVal.Text = string.format("<font color=\"#8e92a4\">Active</font>  <font color=\"#ffffff\"><b>%d</b></font>", activeCount)
 
             wmPingText.Text = string.format("<font color=\"#ffffff\"><b>%d</b></font> <font color=\"#8e92a4\">ms</font>", ping)
+
+            local pingLevel = 4
+            if ping > 200 then pingLevel = 1
+            elseif ping > 140 then pingLevel = 2
+            elseif ping > 80 then pingLevel = 3
+            else pingLevel = 4 end
+            local cAcc = genv.accent or Color3.fromRGB(168, 85, 247)
+            local cDim = Color3.fromRGB(60, 64, 76)
+            if bar1 and bar1.Parent then
+                bar1.BackgroundColor3 = pingLevel >= 1 and cAcc or cDim
+                bar2.BackgroundColor3 = pingLevel >= 2 and cAcc or cDim
+                bar3.BackgroundColor3 = pingLevel >= 3 and cAcc or cDim
+                bar4.BackgroundColor3 = pingLevel >= 4 and cAcc or cDim
+                bar1.BackgroundTransparency = pingLevel >= 1 and 0 or 0.6
+                bar2.BackgroundTransparency = pingLevel >= 2 and 0 or 0.6
+                bar3.BackgroundTransparency = pingLevel >= 3 and 0 or 0.6
+                bar4.BackgroundTransparency = pingLevel >= 4 and 0 or 0.6
+            end
             wmFpsText.Text = string.format("<font color=\"#ffffff\"><b>%d</b></font> <font color=\"#8e92a4\">fps</font>", currentFps)
             wmPlrText.Text = string.format("<font color=\"#ffffff\"><b>%d</b></font> <font color=\"#8e92a4\">players</font>", playerCount)
 
@@ -3098,29 +3250,24 @@ function Library.new(selfOrOpts, options)
         if not Library.exist() then return end
         if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
         local chosenKey = Library.Flags.toggleui or "H"
-        if type(chosenKey) == "string" and input.KeyCode.Name == chosenKey then
+        local keyName = (typeof(chosenKey) == "EnumItem" and chosenKey.Name) or tostring(chosenKey)
+        if input.KeyCode.Name == keyName then
             setHidden(not Library.hidden)
         end
     end)
 
-    new("Frame", {
-        Name = "Line",
-        BackgroundColor3 = genv.uiline or Color3.fromRGB(27, 28, 33),
-        BorderSizePixel = 0,
-        Position = UDim2.new(0.23, 0, 0.0975492922, 0),
-        Size = UDim2.new(0, 2, 0.85, 0),
-        ZIndex = 10,
-    }, Container)
-    table.insert(genv.UIElements, Container:FindFirstChild("Line"))
+
 
     local tabs = new("ScrollingFrame", {
         Name = "Tabs",
         Active = true,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
+        ClipsDescendants = true,
         Position = UDim2.new(0, 10, 0.0915492922, 0),
         Size = UDim2.new(0.21, -10, 0.72, 0),
         ScrollBarThickness = 0,
+        ScrollBarImageTransparency = 1,
         CanvasSize = UDim2.new(0, 0, 0, 0),
         ScrollingDirection = Enum.ScrollingDirection.Y,
         ElasticBehavior = Enum.ElasticBehavior.Never,
@@ -4283,7 +4430,8 @@ function Library.new(selfOrOpts, options)
             Text = "",
         }, tabs)
         table.insert(genv.UIElements, tabBtn)
-        corner(tabBtn, 5)
+        tabBtn.ClipsDescendants = true
+        corner(tabBtn, 7)
         local tabScale = new("UIScale", {Scale = 1}, tabBtn)
 
         local Logo = new("ImageLabel", {
@@ -4320,10 +4468,10 @@ function Library.new(selfOrOpts, options)
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             Position = UDim2.new(0.5, 0, 0.5, 0),
-            Size = UDim2.new(1, 0, 0.01, 36),
+            Size = UDim2.new(1, 0, 1, 0),
             ZIndex = 2,
         }, tabBtn)
-        corner(Fill, 6)
+        corner(Fill, 7)
 
         local gradient = new("UIGradient", {
             Name = "tabselectedcolor",
@@ -4342,6 +4490,7 @@ function Library.new(selfOrOpts, options)
             Position = UDim2.new(0.245, 0, 0.127, 0),
             Size = UDim2.new(0.74, 0, 0.87, 0),
             ScrollBarThickness = 0,
+            ScrollBarImageTransparency = 1,
             ElasticBehavior = Enum.ElasticBehavior.Never,
             ScrollingDirection = Enum.ScrollingDirection.Y,
             CanvasSize = UDim2.new(0, 0, 0, 0),
@@ -4571,6 +4720,20 @@ function Library.new(selfOrOpts, options)
                 TweenService:Create(obj, TweenInfo.new(0.2, Enum.EasingStyle.Quint), {BackgroundColor3 = baseCol}):Play()
                 TweenService:Create(rScale, TweenInfo.new(0.18, Enum.EasingStyle.Quint), {Scale = 1}):Play()
             end)
+            obj.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    local baseCol = genv[themeKey] or fallback or Color3.fromRGB(27, 28, 33)
+                    TweenService:Create(obj, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = baseCol:lerp(WHITE, 0.1)}):Play()
+                    TweenService:Create(rScale, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 0.98}):Play()
+                end
+            end)
+            obj.InputEnded:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    local baseCol = genv[themeKey] or fallback or Color3.fromRGB(27, 28, 33)
+                    TweenService:Create(obj, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundColor3 = baseCol}):Play()
+                    TweenService:Create(rScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+                end
+            end)
             return obj
         end
 
@@ -4653,13 +4816,27 @@ function Library.new(selfOrOpts, options)
                 if newState ~= nil then self.state = newState else self.state = not self.state end
                 Library.Flags[self.flag] = self.state
                 Switch:SetAttribute("State", self.state)
-                local ti = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                local tiStretch = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                local tiSlide = TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+                local colorTi = TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
                 if self.state then
-                    TweenService:Create(Circle, ti, {Position = UDim2.new(1, -13, 0.5, 0)}):Play()
-                    TweenService:Create(Switch, ti, {BackgroundColor3 = genv.togglecoloron or Color3.fromRGB(120, 120, 126)}):Play()
+                    TweenService:Create(Switch, colorTi, {BackgroundColor3 = genv.togglecoloron or genv.accent or Color3.fromRGB(168, 85, 247)}):Play()
+                    TweenService:Create(Circle, tiStretch, {Size = UDim2.new(0, 14, 0, 11)}):Play()
+                    TweenService:Create(Circle, tiSlide, {Position = UDim2.new(1, -13, 0.5, 0)}):Play()
+                    task.delay(0.09, function()
+                        if Circle and Circle.Parent then
+                            TweenService:Create(Circle, TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 11, 0, 11)}):Play()
+                        end
+                    end)
                 else
-                    TweenService:Create(Circle, ti, {Position = UDim2.new(0, 2, 0.5, 0)}):Play()
-                    TweenService:Create(Switch, ti, {BackgroundColor3 = genv.togglecoloroff or Color3.fromRGB(60, 64, 72)}):Play()
+                    TweenService:Create(Switch, colorTi, {BackgroundColor3 = genv.togglecoloroff or Color3.fromRGB(60, 64, 72)}):Play()
+                    TweenService:Create(Circle, tiStretch, {Size = UDim2.new(0, 14, 0, 11)}):Play()
+                    TweenService:Create(Circle, tiSlide, {Position = UDim2.new(0, 2, 0.5, 0)}):Play()
+                    task.delay(0.09, function()
+                        if Circle and Circle.Parent then
+                            TweenService:Create(Circle, TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 11, 0, 11)}):Play()
+                        end
+                    end)
                 end
                 Library.save_flags()
                 if Library.UpdateKeybindList then Library:UpdateKeybindList() end
@@ -4818,6 +4995,7 @@ function Library.new(selfOrOpts, options)
             }, checkbox)
             table.insert(genv.UIElements, Checkbox)
             corner(Checkbox, 4)
+            local checkScale = new("UIScale", {Scale = 1}, Checkbox)
 
             local Glow = new("ImageLabel", {
                 Name = "Glow",
@@ -4862,6 +5040,21 @@ function Library.new(selfOrOpts, options)
                 local ti = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
                 TweenService:Create(Fill, ti, {BackgroundTransparency = self.state and 0 or 1}):Play()
                 TweenService:Create(Glow, ti, {ImageTransparency = self.state and 0 or 1}):Play()
+                if self.state then
+                    TweenService:Create(checkScale, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 1.18}):Play()
+                    task.delay(0.1, function()
+                        if Checkbox and Checkbox.Parent then
+                            TweenService:Create(checkScale, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+                        end
+                    end)
+                else
+                    TweenService:Create(checkScale, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 0.88}):Play()
+                    task.delay(0.1, function()
+                        if Checkbox and Checkbox.Parent then
+                            TweenService:Create(checkScale, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+                        end
+                    end)
+                end
                 Library.save_flags()
                 if not skipCallback and self.callback then self.callback(self.state) end
             end
@@ -5322,12 +5515,13 @@ function Library.new(selfOrOpts, options)
             local cfg = resolve(self, arg)
             local side = getSide(cfg)
             local button = row("Button", "tabcolor")
-            rowTexts(button, cfg.name, cfg.description, 20)
+            local rightPad = cfg.keybind and 56 or 20
+            rowTexts(button, cfg.name, cfg.description, rightPad)
             attachTooltip(button, cfg.tooltip or cfg.desc)
             registerItem(button, side, ELEMENT_HEIGHT, cfg.name)
 
             local pressing = false
-            bindTap(button, function()
+            local function fireButton()
                 if pressing then return end
                 pressing = true
                 local baseColor = genv.buttoncolor or genv.originalColor or Color3.fromRGB(27, 28, 33)
@@ -5344,9 +5538,83 @@ function Library.new(selfOrOpts, options)
                 else
                     if cfg.callback then task.spawn(cfg.callback) end
                 end
-            end)
+            end
 
-            return button
+            bindTap(button, fireButton)
+
+            local obj = {
+                button = button,
+                name = cfg.name,
+                callback = cfg.callback,
+            }
+
+            local function addInlineKeybind(kbOpts)
+                kbOpts = kbOpts or {}
+                local kbFlag = kbOpts.flag or ((cfg.flag or cfg.name or "button") .. "_bind")
+                local defaultKey = kbOpts.default or (kbOpts.keycode and kbOpts.keycode.Name) or "None"
+
+                local Box = new("TextButton", {
+                    Name = "InlineKeybindBox",
+                    AnchorPoint = Vector2.new(1, 0.5),
+                    Position = UDim2.new(1, -12, 0.5, 0),
+                    Size = UDim2.new(0, 48, 0, 20),
+                    BackgroundColor3 = genv.KeybindBox or Color3.fromRGB(24, 25, 30),
+                    BorderSizePixel = 0,
+                    Text = "",
+                    ZIndex = 4,
+                }, button)
+                table.insert(genv.UIElements, Box)
+                corner(Box, 4)
+                stroke(Box, Color3.fromRGB(45, 48, 60), 1, 0.5)
+
+                local KeyText = new("TextLabel", {
+                    Size = UDim2.new(1, 0, 1, 0),
+                    BackgroundTransparency = 1,
+                    TextColor3 = WHITE,
+                    FontFace = font(),
+                    TextSize = 10,
+                    Text = defaultKey,
+                    ZIndex = 5,
+                }, Box)
+
+                Library.Flags[kbFlag] = defaultKey
+                Library:RegisterKeybind(kbFlag, cfg.name or kbFlag, defaultKey, nil, fireButton, fireButton, true)
+
+                local setting = false
+                bindTap(Box, function()
+                    if setting then return end
+                    setting = true
+                    KeyText.Text = "..."
+                    local conn
+                    conn = UserInputService.InputBegan:Connect(function(input)
+                        local pressed = input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode.Name
+                        if not pressed then return end
+                        Library.Flags[kbFlag] = pressed
+                        Library:UpdateKeybind(kbFlag, pressed)
+                        KeyText.Text = pressed
+                        setting = false
+                        conn:Disconnect()
+                    end)
+                end)
+
+                bind(UserInputService.InputBegan, function(input, processed)
+                    if processed or setting then return end
+                    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode.Name == Library.Flags[kbFlag] then
+                        fireButton()
+                    end
+                end)
+            end
+
+            if cfg.keybind then
+                addInlineKeybind(type(cfg.keybind) == "table" and cfg.keybind or {})
+            end
+
+            function obj:AddKeybind(kbOpts)
+                addInlineKeybind(kbOpts)
+                return self
+            end
+
+            return obj
         end
 
         function Module.create_blocked_button(arg)
@@ -5574,7 +5842,9 @@ function Library.new(selfOrOpts, options)
                 Library.slider_drag = true
                 Library.dragging = false
                 itemsSection.ScrollingEnabled = false
-                animate(UDim2.new(0, 18, 0, 18))
+                animate(UDim2.new(0, 19, 0, 19))
+                TweenService:Create(fill, TweenInfo.new(0.12), {BackgroundColor3 = genv.accent or Color3.fromRGB(168, 85, 247)}):Play()
+                TweenService:Create(number, TweenInfo.new(0.12), {TextColor3 = genv.accent or WHITE}):Play()
                 updateFromX(input.Position.X)
             end
 
@@ -5583,6 +5853,8 @@ function Library.new(selfOrOpts, options)
                 Library.slider_drag = false
                 itemsSection.ScrollingEnabled = true
                 animate(UDim2.new(0, 15, 0, 15))
+                TweenService:Create(fill, TweenInfo.new(0.2), {BackgroundColor3 = genv.sliderfill or genv.accent or Color3.fromRGB(90, 90, 90)}):Play()
+                TweenService:Create(number, TweenInfo.new(0.2), {TextColor3 = WHITE}):Play()
                 Library.save_flags()
             end
 
@@ -5644,6 +5916,13 @@ function Library.new(selfOrOpts, options)
             }, container)
             table.insert(genv.UIElements, box)
             corner(box, 4)
+            local boxStroke = stroke(box, Color3.fromRGB(45, 48, 60), 1, 0.4)
+            box.Focused:Connect(function()
+                TweenService:Create(boxStroke, TweenInfo.new(0.2), {Color = genv.accent or Color3.fromRGB(168, 85, 247), Transparency = 0}):Play()
+            end)
+            box.FocusLost:Connect(function()
+                TweenService:Create(boxStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(45, 48, 60), Transparency = 0.4}):Play()
+            end)
             attachTooltip(container, cfg.tooltip or cfg.desc)
             registerItem(container, side, ELEMENT_HEIGHT, cfg.name)
             return box
@@ -5830,6 +6109,7 @@ function Library.new(selfOrOpts, options)
 
             bind(UserInputService.InputBegan, function(input, processed)
                 if processed or setting then return end
+                if cfg.flag == "toggleui" then return end
                 local pressed = pressedName(input)
                 if pressed and pressed == Library.Flags[cfg.flag] then
                     toggleKb()
@@ -6270,4 +6550,3 @@ function Library.new(selfOrOpts, options)
 end
 
 return Library
-
